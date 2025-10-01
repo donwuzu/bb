@@ -258,8 +258,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let isTransitioning = false;
     let autoSlideInterval;
     let startX = 0;
+    let startY = 0;
     let currentX = 0;
     let isDragging = false;
+    let isHorizontalSwipe = false; 
     let hasUserInteracted = false;
 
     // Initialize carousel
@@ -391,28 +393,49 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Touch/Mouse drag functionality
-    function handleStart(e) {
-        isDragging = true;
-        startX = e.type === 'mousedown' ? e.clientX : e.touches[0].clientX;
-        stopAutoSlide();
-        track.style.cursor = 'grabbing';
-        track.style.userSelect = 'none';
-        hasUserInteracted = true;
-    }
+   function handleStart(e) {
+    isDragging = true;
+    startX = e.type === 'mousedown' ? e.clientX : e.touches[0].clientX;
+    startY = e.type === 'mousedown' ? e.clientY : e.touches[0].clientY;
+    isHorizontalSwipe = false;
+    stopAutoSlide();
+    track.style.cursor = 'grabbing';
+    track.style.userSelect = 'none';
+    hasUserInteracted = true;
+}
 
-    function handleMove(e) {
-        if (!isDragging) return;
+ // Update handleMove function
+function handleMove(e) {
+    if (!isDragging) return;
+    
+    currentX = e.type === 'mousemove' ? e.clientX : e.touches[0].clientX;
+    const currentY = e.type === 'mousemove' ? e.clientY : e.touches[0].clientY;
+    const deltaX = currentX - startX;
+    const deltaY = currentY - startY;
+    
+    // Determine swipe direction on first significant movement
+    if (!isHorizontalSwipe && (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5)) {
+        if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            isHorizontalSwipe = true;
+        } else {
+            // It's a vertical scroll, release control immediately
+            isDragging = false;
+            track.style.cursor = '';
+            track.style.userSelect = '';
+            return; // Exit early to allow vertical scroll
+        }
+    }
+    
+    // Only handle carousel drag if confirmed horizontal swipe
+    if (isHorizontalSwipe) {
         e.preventDefault();
         
-        currentX = e.type === 'mousemove' ? e.clientX : e.touches[0].clientX;
-        const deltaX = currentX - startX;
-        
-        // Add resistance to drag
         const resistance = Math.abs(deltaX) > 100 ? 0.5 : 0.8;
         const dragOffset = (deltaX * resistance) / track.offsetWidth * 100;
         
         track.style.transform = `translateX(${-currentSlide * 100 + dragOffset}%)`;
     }
+}
 
     function handleEnd() {
         if (!isDragging) return;
@@ -451,91 +474,92 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Add all event listeners
-    function addEventListeners() {
-        // Button navigation
-        if (prevBtn) {
-            prevBtn.addEventListener('click', () => {
-                prevSlide();
-                resetAutoSlide();
-            });
-        }
-        
-        if (nextBtn) {
-            nextBtn.addEventListener('click', () => {
-                nextSlide();
-                resetAutoSlide();
-            });
-        }
-        
-        // Dot navigation
-        dots.forEach((dot, index) => {
-            dot.addEventListener('click', () => {
-                updateCarousel(index);
-                resetAutoSlide();
-            });
+   
+  // Add all event listeners
+function addEventListeners() {
+    // Button navigation
+    if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+            prevSlide();
+            resetAutoSlide();
         });
-        
-        // Touch events for mobile
-        track.addEventListener('touchstart', handleStart, { passive: false });
-        track.addEventListener('touchmove', handleMove, { passive: false });
-        track.addEventListener('touchend', handleEnd);
-        
-        // Mouse events for desktop
-        track.addEventListener('mousedown', handleStart);
-        track.addEventListener('mousemove', handleMove);
-        track.addEventListener('mouseup', handleEnd);
-        track.addEventListener('mouseleave', handleEnd);
-        
-        // Prevent context menu on long press
-        track.addEventListener('contextmenu', (e) => e.preventDefault());
-        
-        // Keyboard navigation
-        document.addEventListener('keydown', handleKeyDown);
-        
-        // Pause auto-slide when page is not visible
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                stopAutoSlide();
-            } else {
+    }
+    
+    if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+            nextSlide();
+            resetAutoSlide();
+        });
+    }
+    
+    // Dot navigation
+    dots.forEach((dot, index) => {
+        dot.addEventListener('click', () => {
+            updateCarousel(index);
+            resetAutoSlide();
+        });
+    });
+    
+    // Touch events for mobile
+    track.addEventListener('touchstart', handleStart, { passive: true });
+    track.addEventListener('touchmove', handleMove, { passive: false });
+    track.addEventListener('touchend', handleEnd);
+    
+    // Mouse events for desktop
+    track.addEventListener('mousedown', handleStart);
+    track.addEventListener('mousemove', handleMove);
+    track.addEventListener('mouseup', handleEnd);
+    track.addEventListener('mouseleave', handleEnd);
+    
+    // Prevent context menu on long press
+    track.addEventListener('contextmenu', (e) => e.preventDefault());
+    
+    // Keyboard navigation
+    document.addEventListener('keydown', handleKeyDown);
+    
+    // Pause auto-slide when page is not visible
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopAutoSlide();
+        } else {
+            startAutoSlide();
+        }
+    });
+    
+    // Pause on hover (desktop only)
+    if (!('ontouchstart' in window)) {
+        track.addEventListener('mouseenter', stopAutoSlide);
+        track.addEventListener('mouseleave', () => {
+            if (!hasUserInteracted) {
                 startAutoSlide();
             }
         });
-        
-        // Pause on hover (desktop only)
-        if (!('ontouchstart' in window)) {
-            track.addEventListener('mouseenter', stopAutoSlide);
-            track.addEventListener('mouseleave', () => {
-                if (!hasUserInteracted) {
-                    startAutoSlide();
+    }
+    
+    // Handle window resize
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            updateCarousel(currentSlide, false);
+        }, 250);
+    });
+    
+    // Intersection Observer for performance
+    if ('IntersectionObserver' in window) {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    if (!autoSlideInterval) startAutoSlide();
+                } else {
+                    stopAutoSlide();
                 }
             });
-        }
+        }, { threshold: 0.5 });
         
-        // Handle window resize
-        let resizeTimeout;
-        window.addEventListener('resize', () => {
-            clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
-                updateCarousel(currentSlide, false);
-            }, 250);
-        });
-        
-        // Intersection Observer for performance
-        if ('IntersectionObserver' in window) {
-            const observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        if (!autoSlideInterval) startAutoSlide();
-                    } else {
-                        stopAutoSlide();
-                    }
-                });
-            }, { threshold: 0.5 });
-            
-            observer.observe(track.parentElement);
-        }
+        observer.observe(track.parentElement);
     }
+}
 
     // Handle smooth scrolling for anchor links in carousel
     function setupSmoothScrolling() {
@@ -580,7 +604,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// CSS-in-JS for additional styling that might be needed
+/// CSS-in-JS for additional styling that might be needed
 const style = document.createElement('style');
 style.textContent = `
     .carousel-track {
@@ -594,6 +618,17 @@ style.textContent = `
         will-change: transform;
     }
     
+    /* Allow vertical scrolling through carousel */
+    .carousel-slide * {
+        pointer-events: auto;
+    }
+    
+    /* Don't let links and buttons block carousel swipe detection */
+    .carousel-slide a,
+    .carousel-slide button {
+        touch-action: auto;
+    }
+    
     @media (prefers-reduced-motion: reduce) {
         .carousel-track {
             transition: none !important;
@@ -605,10 +640,14 @@ style.textContent = `
         }
     }
     
-    /* Improve touch performance on mobile */
+    /* Improve touch performance on mobile - CRITICAL FIX */
     .carousel-container {
-        touch-action: pan-y pinch-zoom;
+        touch-action: manipulation;
         -webkit-overflow-scrolling: touch;
+    }
+    
+    .carousel-track {
+        touch-action: pan-y pinch-zoom;
     }
     
     /* Better focus states for accessibility */
@@ -621,4 +660,7 @@ style.textContent = `
 `;
 
 document.head.appendChild(style);
+
+
+
 </script>
